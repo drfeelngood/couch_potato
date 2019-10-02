@@ -62,7 +62,7 @@ module CouchPotato
         elsif old.nil? ^ new.nil?
           true
         else
-          (doc?(new) && new.changed?) || old.to_hash != new.to_hash
+          (doc?(new) && new.changed?) || deep_to_hash(old) != deep_to_hash(new)
         end
       end
 
@@ -77,7 +77,7 @@ module CouchPotato
         elsif old.blank? ^ new.blank?
           true
         else
-          old != new || old.map(&:to_hash) != new.map(&:to_hash)
+          old != new || old.map{|v| deep_to_hash(v)} != new.map{|v| deep_to_hash(v)}
         end
       end
 
@@ -98,6 +98,20 @@ module CouchPotato
         clone = clone_attribute(old)
         clone.attributes = new.attributes
         clone.changes
+      end
+
+      def deep_to_hash(m)
+        (m.class.properties).inject({}) do |props, property|
+          val = m.send(property.name)
+          if val.is_a?(Array) && val.all?{|v| v.kind_of?(CouchPotato::Persistence)}
+            props[property.name] = val.map{|v| deep_to_hash(v)}
+          elsif val.kind_of?(CouchPotato::Persistence)
+            props[property.name] = deep_to_hash(val)
+          else
+            property.serialize(props, m)
+          end
+          props
+        end.merge(JSON.create_id => m.class.name).merge(id_and_rev_json)
       end
 
       def simple_array_change(name)

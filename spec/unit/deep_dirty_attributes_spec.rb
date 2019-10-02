@@ -37,6 +37,13 @@ class TextBook < Book
   property :edition
 end
 
+class Library
+  include CouchPotato::Persistence
+  include CouchPotato::Persistence::DeepDirtyAttributes
+
+  property :books, :type => [Book]
+end
+
 describe "deep dirty attribute tracking" do
   describe "standard dirty checking" do
     describe "_changed?" do
@@ -129,7 +136,7 @@ describe "deep dirty attribute tracking" do
       end
 
       it "should return the standard changes when a nested document is reassigned to nil" do
-        cover = Cover.new
+        cover = Cover.new(:_id => "1")
         book = Book.new(:cover => cover)
         book.cover = nil
         expect(book.cover_change[0]).to eq(cover)
@@ -137,7 +144,7 @@ describe "deep dirty attribute tracking" do
       end
 
       it "should return the nested changes when a nested document is changed" do
-        book = Book.new(:cover => Cover.new(:color => "red"))
+        book = Book.new(:cover => Cover.new(:_id => "1", :color => "red"))
         book.cover.color = "blue"
         expect(book.cover_change[0]).to be_a Cover
         expect(book.cover_change[0].color).to eq("red")
@@ -150,6 +157,39 @@ describe "deep dirty attribute tracking" do
         expect(book.cover_change[0]).to be_a Cover
         expect(book.cover_change[0].color).to eq("red")
         expect(book.cover_change[1]).to eq({"color" => ["red", "blue"]})
+      end
+    end
+
+    describe "with deeply nested document array" do
+      describe "_changed?" do
+        it "should return true if a nested attribute has changed" do
+          library = Library.new(:_id => "1", :books => [Book.new(:_id => "2", :cover => Cover.new(:_id => "3", :color => "red"))])
+          library.books[0].cover.color = "green"
+          expect(library).to be_changed
+          expect(library).to be_books_changed
+        end
+
+        it "should return true if changed to a different document" do
+          library = Library.new(:_id => "1", :books => [Book.new(:_id => "2", :cover => Cover.new(:_id => "3", :color => "red"))])
+          library.books[0].cover = Cover.new(:color => "blue")
+          expect(library).to be_books_changed
+          expect(library).to be_changed
+        end
+
+        it "should return false if changed to a duplicate of the original document" do
+          library = Library.new(:_id => "1", :books => [Book.new(:_id => "2", :cover => Cover.new(:_id => "3", :color => "red"))])
+          library.books[0].cover = library.books[0].cover.clone
+          expect(library).not_to be_books_changed
+          expect(library).not_to be_changed
+        end
+
+        it "should return true when reassigned with changes but the same _id" do
+          library = Library.new(:_id => "1", :books => [Book.new(:_id => "123", :cover => Cover.new(:_id => "cid", :color => "red"))])
+          library.books[0].cover = Cover.new(:_id => "cid", :color => "blue")
+          expect(library.books[0].cover_change[1]).to eq({"color" => ["red", "blue"]})
+          expect(library).to be_books_changed
+          expect(library).to be_changed
+        end
       end
     end
   end
@@ -338,6 +378,39 @@ describe "deep dirty attribute tracking" do
         expect(book.pages_change[1][:added]).to eq([])
         expect(book.pages_change[1][:removed]).to eq([])
         expect(book.pages_change[1][:changed]).to eq([[pages[0], {"number" => [1, 2]}]])
+      end
+    end
+
+    describe "with deeply nested document array" do
+      describe "_changed?" do
+        it "should return true if a nested attribute has changed" do
+          library = Library.new(:_id => "1", :books => [Book.new(:_id => "2", :pages => [Page.new(number: "222")])])
+          library.books[0].pages[0].number = "2"
+          expect(library).to be_books_changed
+          expect(library).to be_changed
+        end
+
+        it "should return true if changed to a different document" do
+          library = Library.new(:_id => "1", :books => [Book.new(:_id => "2", :pages => [Page.new(number: "1")])])
+          library.books[0].pages[0] = Page.new(:number => "22")
+          expect(library).to be_books_changed
+          expect(library).to be_changed
+        end
+
+        it "should return false if changed to a duplicate of the original document" do
+          library = Library.new(:_id => "1", :books => [Book.new(:_id => "2", :pages => [Page.new(number: "1")])])
+          library.books[0].pages[0] = library.books[0].pages[0].clone
+          expect(library).not_to be_books_changed
+          expect(library).not_to be_changed
+        end
+
+        it "should return true when reassigned with changes but the same _id" do
+          library = Library.new(:_id => "1", :books => [Book.new(:_id => "123", :pages => [Page.new(:_id => "pid", number: "1")])])
+          library.books[0].pages[0] = Page.new(:_id => "pid", :number => "22")
+          expect(library.books[0].pages_change[1]["changed"][0][1]).to eq({"number" => ["1", "22"]})
+          expect(library).to be_books_changed
+          expect(library).to be_changed
+        end
       end
     end
   end
